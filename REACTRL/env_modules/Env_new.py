@@ -628,7 +628,7 @@ class RealExpEnv:
                 # print('iiijjj', i, j)
                 if self.mask[i+self.num_cell,j+self.num_cell] == True:
                     # plt.gca().add_patch(patches.Rectangle((x+i*self.cellsize-4,  y+j*self.cellsize), 8, 8, fill=False, edgecolor='grey', lw=2))
-                    plt.scatter(x+i*self.cellsize,y+j*self.cellsize,color='g',s=1)
+                    # plt.scatter(x+i*self.cellsize,y+j*self.cellsize,color='g',s=1)
                     continue
 
                 dist_euclidian = np.sqrt(float((i*self.cellsize)**2)+ float((j*self.cellsize)**2)) #Euclidian distance
