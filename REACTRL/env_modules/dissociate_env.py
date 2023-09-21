@@ -4,6 +4,8 @@ from .rrt import RRT
 from .data_visualization import plot_atoms_and_design
 from .assign_and_anchor import assignment, align_design, align_deisgn_stitching, get_atom_and_anchor
 
+for .image_module import image_process
+
 from scipy.spatial.distance import cdist as cdist
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -128,11 +130,11 @@ class Dissociate_Env(RealExpEnv):
                 jump = self.detect_current_jump(current_series)
         if done or jump:
                 img_forward_next, img_backward_next, offset_nm, len_nm=env.createc_controller.scan_image()
-                if np.abs(img_forward_next-img_forward)>1e-6 and self.measure_fragment(img_forward_next)!=self.measure_fragment(img_forward):  # if the image is obviously different from the previous one
+                if np.abs(img_forward_next - img_forward)>1e-6 and self.measure_fragment(img_forward_next)!=self.measure_fragment(img_forward):  # if the image is obviously different from the previous one
                         done=True
 # if no changes in the image or slight changes but no breakage of covalent bonds
         next_state=self.measure_fragment(img_forward_next)  # return ell_x, ell_y, ell_len, ell_wid
-        reward=self.compute_reward(img_forward, img_forward_next)
+        reward=self.compute_reward(self.state, next_state)  # or reward=self.compute_reward(self.image_forward, image_forward_next)
 
 
         info  |= {'dist_destination':self.dist_destination,
@@ -156,11 +158,14 @@ class Dissociate_Env(RealExpEnv):
 
         Returns
         -------
-        center_x, center_y, length, width: float
+        center_x, center_y, length, width, angle: float
                 the center position and size of the fragment
         """
 
-        pass
+        ell_shape=image_process(img, kernal_v=8) 
+
+
+        pass ell_shape
 
     def get_reward(self, img_forward: np.array, img_forward_next: np.array)->float:
         """
@@ -179,6 +184,9 @@ class Dissociate_Env(RealExpEnv):
         reward: float
                 the reward for the RL agent
         """
+
+
+        
         pass
 
     
