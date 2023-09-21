@@ -212,8 +212,8 @@ class Createc_Controller:
         self.stm.setparam('BiasVolt.[mV]',mvoltage)
         self.ramp_bias_mV(mvoltage)
         preamp_grain = 10**float(self.stm.getparam("Latmangain"))
-        self.createc_controller.stm.setparam("LatmanVolt",  mvoltage) #(mV)
-        self.createc_controller.stm.setparam("Latmanlgi", pcurrent*1e-9*preamp_grain) #(pA)
+        self.stm.setparam("LatmanVolt",  mvoltage) #(mV)
+        self.stm.setparam("Latmanlgi", pcurrent*1e-9*preamp_grain) #(pA)
         
         self.set_Z_approach(z_nm)
         args = x_start_nm, y_start_nm, x_end_nm, y_end_nm, offset_nm, len_nm 
