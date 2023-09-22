@@ -16,235 +16,366 @@ dissociate_data = namedtuple('dissociate_data',['time','x','y','current','dI_dV'
 
 
 class Dissociate_Env(RealExpEnv):
-    def __init__(self, step_nm, max_mvolt, max_pcurrent_to_mvolt_ratio, goal_nm, current_jump, im_size_nm, offset_nm,
-                 pixel, scan_mV, max_len, safe_radius_nm = 1, speed = None, precision_lim = None):
-        super(Dissociate_Env, self).__init__(step_nm, max_mvolt, max_pcurrent_to_mvolt_ratio, goal_nm, None, current_jump,
-                                                im_size_nm, offset_nm, None, pixel, None, scan_mV, max_len, None, random_scan_rate = 0)
-        self.atom_absolute_nm_f = None
-        self.atom_absolute_nm_b = None
-        self.large_offset_nm = offset_nm
-        self.large_len_nm = im_size_nm
-        self.safe_radius_nm = safe_radius_nm
-        self.anchor_nm = None
-        self.anchor_chosen = None
-        if speed is None:
-            self.speed = self.createc_controller.get_speed()
+        def __init__(self,
+                step_nm,
+                goal_nm,
+                max_z_nm,
+                max_mvolt,
+                max_pcurrent_to_mvolt_ratio,
+                template,
+                current_jump,
+                im_size_nm,
+                offset_nm,
+                manip_limit_nm,
+                pixel,
+                template_max_y,
+                scan_mV,
+                max_len,
+                load_weight,
+                pull_back_mV = None,
+                pull_back_pA = None,
+                random_scan_rate = 0.5,
+                correct_drift = False,
+                bottom = True,
+                cellsize = 10, # nm
+                max_radius = 150, # nm
+                ):
+                
+                super(Dissociate_Env, self).__init__(step_nm, max_mvolt, max_pcurrent_to_mvolt_ratio, goal_nm, None, current_jump,
+                                                        im_size_nm, offset_nm, None, pixel, None, scan_mV, max_len, None, random_scan_rate = 0)
+        self.step_nm = step_nm
+        self.goal_nm = goal_nm
+        self.max_z_nm = max_z_nm
+        self.max_mvolt = max_mvolt
+        self.max_pcurrent_to_mvolt_ratio = max_pcurrent_to_mvolt_ratio
+        self.pixel = pixel
+
+
+        self.template = template
+        args = im_size_nm, offset_nm, pixel, scan_mV
+        self.createc_controller = Createc_Controller(*args)
+        self.current_jump = current_jump
+        self.manip_limit_nm = manip_limit_nm
+        if self.manip_limit_nm is not None:
+            self.inner_limit_nm = self.manip_limit_nm + np.array([1,-1,1,-1])
+        self.offset_nm = offset_nm
+        self.len_nm = im_size_nm
+
+        self.default_reward = -1
+        self.default_reward_done = 1
+        self.max_len = max_len
+        self.correct_drift = correct_drift
+        self.atom_absolute_nm = None
+        self.atom_relative_nm = None
+        self.template_max_y = template_max_y
+
+        self.lattice_constant = 0.288
+        self.precision_lim = self.lattice_constant*np.sqrt(3)/3
+        self.bottom = bottom
+        kwargs = {'data_len': 2048, 'load_weight': load_weight}
+        self.atom_move_detector = AtomJumpDetector_conv(**kwargs)
+        self.random_scan_rate = random_scan_rate
+        self.accuracy, self.true_positive, self.true_negative = [], [], []
+        if pull_back_mV is None:
+            self.pull_back_mV = 10
         else:
-            self.speed = speed
-        if precision_lim is not None:
-            self.precision_lim = precision_lim
+            self.pull_back_mV = pull_back_mV
 
-    def reset(self, updata_conv_net=True):
-        """
-        Reset the environment
+        if pull_back_pA is None:
+            self.pull_back_pA = 57000
+        else:
+            self.pull_back_pA = pull_back_pA
 
-        Parameters
-        ----------
-        update_conv_net: bool
-                whether to update the parameters of the AtomJumpDetector_conv CNN
+        self.cellsize = cellsize
+        self.max_radius = max_radius
+        self.num_cell = int(self.max_radius/self.cellsize)
+        
 
-        Returns
-        -------
-        self.state: array_like
-        info: dict
-        """
-        self.len = 0
+        def reset(self, updata_conv_net=True):
+                """
+                Reset the environment
 
-#TODO  build atom_diss_detector.currents_val
+                Parameters
+                ----------
+                update_conv_net: bool
+                        whether to update the parameters of the AtomJumpDetector_conv CNN
 
-        if (len(self.atom_move_detector.currents_val)>self.atom_move_detector.batch_size) and update_conv_net:
-            accuracy, true_positive, true_negative = self.atom_move_detector.eval()
-            self.accuracy.append(accuracy)
-            self.true_positive.append(true_positive)
-            self.true_negative.append(true_negative)
-            self.atom_move_detector.train()
+                Returns
+                -------
+                self.state: array_like
+                info: dict
+                """
+                self.len = 0
 
-        if (self.atom_absolute_nm is None) or (self.atom_relative_nm is None):
-            self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
+        #TODO  build atom_diss_detector.currents_val
 
-        if self.out_of_range(self.atom_absolute_nm, self.inner_limit_nm):
-            print('Warning: atom is out of limit')
-            self.pull_atom_back()
-            self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
+                if (len(self.atom_move_detector.currents_val)>self.atom_move_detector.batch_size) and update_conv_net:
+                accuracy, true_positive, true_negative = self.atom_move_detector.eval()
+                self.accuracy.append(accuracy)
+                self.true_positive.append(true_positive)
+                self.true_negative.append(true_negative)
+                self.atom_move_detector.train()
+
+                if (self.atom_absolute_nm is None) or (self.atom_relative_nm is None):
+                self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
+
+                if self.out_of_range(self.atom_absolute_nm, self.inner_limit_nm):
+                print('Warning: atom is out of limit')
+                self.pull_atom_back()
+                self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
 
 
-        #goal_nm is set between 0.28 - 2 nm (Cu)
-        goal_nm = self.lattice_constant + np.random.random()*(self.goal_nm - self.lattice_constant)
-        print('goal_nm:',goal_nm)
+                #goal_nm is set between 0.28 - 2 nm (Cu)
+                goal_nm = self.lattice_constant + np.random.random()*(self.goal_nm - self.lattice_constant)
+                print('goal_nm:',goal_nm)
 
-        self.atom_start_absolute_nm, self.atom_start_relative_nm = self.atom_absolute_nm, self.atom_relative_nm
-        # self.destination_relative_nm, self.destination_absolute_nm, self.goal = self.get_destination(self.atom_start_relative_nm, self.atom_start_absolute_nm, goal_nm)
+                self.atom_start_absolute_nm, self.atom_start_relative_nm = self.atom_absolute_nm, self.atom_relative_nm
+                # self.destination_relative_nm, self.destination_absolute_nm, self.goal = self.get_destination(self.atom_start_relative_nm, self.atom_start_absolute_nm, goal_nm)
 
-        # self.state = np.concatenate((self.goal, (self.atom_absolute_nm - self.atom_start_absolute_nm)/self.goal_nm))
-        # self.dist_destination = goal_nm
-        img_forward, img_backward, offset_nm, len_nm = env.createc_controller.scan_image()
+                # self.state = np.concatenate((self.goal, (self.atom_absolute_nm - self.atom_start_absolute_nm)/self.goal_nm))
+                # self.dist_destination = goal_nm
+                img_forward, img_backward, offset_nm, len_nm = env.createc_controller.scan_image()
 
-        ell_x, ell_y, ell_len, ell_wid = self.measure_fragment(img_forward)   # analyze forward or backward images
-        self.state = np.array([ell_x, ell_y, ell_len, ell_wid])
+                ell_x, ell_y, ell_len, ell_wid = self.measure_fragment(img_forward)   # analyze forward or backward images
+                self.state = np.array([ell_x, ell_y, ell_len, ell_wid])
 
-        info = {'start_absolute_nm':self.atom_start_absolute_nm, 'start_relative_nm':self.atom_start_relative_nm, 'goal_absolute_nm':self.destination_absolute_nm,
-                'goal_relative_nm':self.destination_relative_nm, 'start_absolute_nm_f':self.atom_absolute_nm_f, 'start_absolute_nm_b':self.atom_absolute_nm_b,
-                'start_relative_nm_f':self.atom_relative_nm_f, 'start_relative_nm_b':self.atom_relative_nm_b}
-        return self.state, info
+                info = {'start_absolute_nm':self.atom_start_absolute_nm, 'start_relative_nm':self.atom_start_relative_nm, 'goal_absolute_nm':self.destination_absolute_nm,
+                        'goal_relative_nm':self.destination_relative_nm, 'start_absolute_nm_f':self.atom_absolute_nm_f, 'start_absolute_nm_b':self.atom_absolute_nm_b,
+                        'start_relative_nm_f':self.atom_relative_nm_f, 'start_relative_nm_b':self.atom_relative_nm_b}
+                return self.state, info
+
+        def step(self, action):
+                """
+                Take a large STM scan and update the atoms and designs after a RL episode  
+
+                Parameters
+                ----------
+                succeed: bool
+                        if the RL episode was successful
+                
+                new_atom_position: array_like
+                        the new position of the manipulated atom
+
+                Returns
+                -------
+                self.atom_chosen, self.design_chosen, self.next_destinatio_nm, self.anchor_chosen: array_like
+                        the positions of the atom, design, target, and anchor to be used in the RL episode 
+                
+                self.paths: array_like
+                        the planned path between atom and design
+                
+                offset_nm: array_like
+                        offset value to use for the STM scan
+
+                len_nm: float
+                        image size for the STM scan 
+                
+                done:bool 
+                """
+
+                rets = self.action_to_dissociate(action)
+                x_start_nm, y_start_nm, x_end_nm, y_end_nm, z_nm, mvolt, pcurrent = rets
+                args = x_start_nm, y_start_nm, z_nm, mvolt
+                time,V,Z,current_series, dI_dV, topography = self.step_dissociate(*args)
+
+                info={'time':time, 'V':V, 'Z':Z, 'current_series':current_series, 'dI_dV': dI_dV, 'topography':topography, 'start_nm': np.array([x_start_nm,  y_start_nm]), 'z_nm': z_nm}
+
+                done=False
+                self.len+=1
+                done = self.len==self.max_len
+                if not done:
+                        jump = self.detect_current_jump(current_series)
+                if done or jump:
+                        img_forward_next, img_backward_next, offset_nm, len_nm=env.createc_controller.scan_image()
+                        if np.abs(img_forward_next - img_forward)>1e-6 and self.measure_fragment(img_forward_next)!=self.measure_fragment(img_forward):  # if the image is obviously different from the previous one
+                                done=True
+        # if no changes in the image or slight changes but no breakage of covalent bonds
+                next_state=self.measure_fragment(img_forward_next)  # return ell_x, ell_y, ell_len, ell_wid
+                reward=self.compute_reward(self.state, next_state)  # or reward=self.compute_reward(self.image_forward, image_forward_next)
+
+
+                info  |= {'dist_destination':self.dist_destination,
+                        'atom_absolute_nm':self.atom_absolute_nm, 'atom_relative_nm':self.atom_relative_nm, 'atom_absolute_nm_f':self.atom_absolute_nm_f,
+                        'atom_relative_nm_f' : self.atom_relative_nm_f, 'atom_absolute_nm_b': self.atom_absolute_nm_b, 'atom_relative_nm_b':self.atom_relative_nm_b,
+                        'img_info':self.img_info}   #### not very sure about the img_info
+                
+                self.state=next_state
+
+
+                return next_state, reward, done, info
+
+        def measure_fragment(self, img: np.array)->tuple:   
+                """
+                Measure the fragment after dissociation
+
+                Parameters
+                ----------
+                img: array_like
+                        the STM image after dissociation
+
+                Returns
+                -------
+                center_x, center_y, length, width, angle: float
+                        the center position and size of the fragment
+                """
+
+                ell_shape=image_process(img, kernal_v=8) 
+
+
+                pass ell_shape
+
+        def compute_reward(self, img_forward: np.array, img_forward_next: np.array)->float:
+                """
+                Calculate the reward after dissociation
+
+                Parameters
+                ----------
+                img_forward: array_like
+                        the STM image before dissociation
+
+                img_forward_next: array_like
+                        the STM image after dissociation
+
+                Returns
+                -------
+                reward: float
+                        the reward for the RL agent
+                """
+
+
+
+                pass
+
+        def action_to_diss_input(self, action):
+                """
+                Convert the action to the input for the dissociation
+
+                Parameters
+                ----------
+                action: array_like 7D
+                        the action from the RL agent
+
+                Returns
+                -------
+                x_start_nm, y_start_nm, x_end_nm, y_end_nm, z_nm, mvolt, pcurrent: float
+                        the input for the dissociation
+                """
+                x_start_nm = action[0]*self.step_nm
+                y_start_nm = action[1]*self.step_nm
+                x_end_nm = action[2]*self.goal_nm
+                y_end_nm = action[3]*self.goal_nm
+                z_nm = action[4]*self.max_z_nm
+                mvolt = np.clip(action[4], a_min = None, a_max=1)*self.max_mvolt
+                pcurrent = np.clip(action[5], a_min = None, a_max=1)*self.max_pcurrent_to_mvolt_ratio
+                return x_start_nm, y_start_nm, x_end_nm, y_end_nm, z_nm, mvolt, pcurrent
+
+
+
     
-    def step(self, action):
-        """
-        Take a large STM scan and update the atoms and designs after a RL episode  
+        def step_dissociate(self, x_start_nm, y_start_nm, z_nm, mvolt, pcurrent):
+                """
+                Execute the action in Createc
 
-        Parameters
-        ----------
-        succeed: bool
-                if the RL episode was successful
+                Parameters
+                ----------
+                x_start_nm, y_start_nm: float
+                        start position of the tip dissociation in nm
+                mvolt: float
+                        bias voltage in mV
+                pcurrent: float
+                        current setpoint in pA
+
+                Return
+                ------
+                current: array_like
+                        manipulation current trace
+                d: float
+                        tip movement distance
+                """
+
+
+
+                x_start_nm = x_start_nm + self.atom_absolute_nm[0]
+                y_start_nm = y_start_nm + self.atom_absolute_nm[1]
+
+                x_kwargs = {'a_min':self.manip_limit_nm[0], 'a_max':self.manip_limit_nm[1]}
+                y_kwargs = {'a_min':self.manip_limit_nm[2], 'a_max':self.manip_limit_nm[3]}
+
+                x_start_nm = np.clip(x_start_nm, **x_kwargs)
+                y_start_nm = np.clip(y_start_nm, **y_kwargs) 
+
+                pos = x_start_nm, y_start_nm, z_nm
+                params = mvolt, pcurrent, self.offset_nm, self.len_nm
+
+                data = self.createc_controller.dissassmanipulation(*pos, *params)
+
+                if data is not None:
+                        current = np.array(data.current).flatten()
+                else:
+                        current = None
+
+                return current
         
-        new_atom_position: array_like
-                the new position of the manipulated atom
+        def detect_current_jump_m1(self, current):
+                """
+                Estimate if molecule has dissociated based on the gradient of the manipulation current trace
 
-        Returns
-        -------
-        self.atom_chosen, self.design_chosen, self.next_destinatio_nm, self.anchor_chosen: array_like
-                the positions of the atom, design, target, and anchor to be used in the RL episode 
+                Parameters
+                ----------
+                current: array_like
+                        manipulation current trace
+
+                Return
+                ------
+                bool
+                whether the molecule has likely dissociated
+                """
+                if current is not None:
+                        diff = findiff.FinDiff(0,1,acc=6)(current)[3:-3]
+                        return np.sum(np.abs(diff)>self.current_jump*np.std(current)) > 2
+                else:
+                        return False
         
-        self.paths: array_like
-                the planned path between atom and design
-        
-        offset_nm: array_like
-                offset value to use for the STM scan
+        def detect_current_jump_cnn(self, current):
+                """
+                Estimate if atom has moved based on AtomJumpDetector_conv and the gradient of the manipulation current trace
 
-        len_nm: float
-                image size for the STM scan 
-        
-        done:bool 
-        """
+                Parameters
+                ----------
+                current: array_like
+                        manipulation current trace
 
-        rets = self.action_to_dissociate(action)
-        x_start_nm, y_start_nm, x_end_nm, y_end_nm, z_nm, mvolt, pcurrent = rets
-        args = x_start_nm, y_start_nm, z_nm, mvolt
-        time,V,Z,current_series, dI_dV, topography = self.step_dissociate(*args)
-
-        info={'time':time, 'V':V, 'Z':Z, 'current_series':current_series, 'dI_dV': dI_dV, 'topography':topography, 'start_nm': np.array([x_start_nm,  y_start_nm]), 'z_nm': z_nm}
-
-        done=False
-        self.len+=1
-        done = self.len==self.max_len
-        if not done:
-                jump = self.detect_current_jump(current_series)
-        if done or jump:
-                img_forward_next, img_backward_next, offset_nm, len_nm=env.createc_controller.scan_image()
-                if np.abs(img_forward_next - img_forward)>1e-6 and self.measure_fragment(img_forward_next)!=self.measure_fragment(img_forward):  # if the image is obviously different from the previous one
-                        done=True
-# if no changes in the image or slight changes but no breakage of covalent bonds
-        next_state=self.measure_fragment(img_forward_next)  # return ell_x, ell_y, ell_len, ell_wid
-        reward=self.compute_reward(self.state, next_state)  # or reward=self.compute_reward(self.image_forward, image_forward_next)
-
-
-        info  |= {'dist_destination':self.dist_destination,
-                'atom_absolute_nm':self.atom_absolute_nm, 'atom_relative_nm':self.atom_relative_nm, 'atom_absolute_nm_f':self.atom_absolute_nm_f,
-                'atom_relative_nm_f' : self.atom_relative_nm_f, 'atom_absolute_nm_b': self.atom_absolute_nm_b, 'atom_relative_nm_b':self.atom_relative_nm_b,
-                'img_info':self.img_info}   #### not very sure about the img_info
-        
-        self.state=next_state
+                Returns
+                -------
+                bool
+                        whether the molecule has likely dissociated
+                """
+                if current is not None:
+                        success, prediction = self.atom_diss_detector.predict(current)
+                        old_prediction = self.detect_current_jump_m1(current)
+                        print('CNN prediction:',prediction,'M1 prediction:', old_prediction)
+                        if success:
+                                print('cnn thinks there is molecule dissociation')
+                                return True
+                        elif old_prediction and (np.random.random()>(self.random_scan_rate-0.3)):
+                                return True
+                        elif (np.random.random()>(self.random_scan_rate-0.2)) and (prediction>0.35):
+                                print('Random scan')
+                                return True
+                        elif np.random.random()>self.random_scan_rate:
+                                print('Random scan')
+                                return True
+                        else:
+                                print('CNN and old prediction both say no dissociation')
+                                return False
+                else:
+                        print('CNN and old prediction both say no dissociation')                    
+                        return False
 
 
-        return next_state, reward, done, info
-    
-    def measure_fragment(self, img: np.array)->tuple:   
-        """
-        Measure the fragment after dissociation
-
-        Parameters
-        ----------
-        img: array_like
-                the STM image after dissociation
-
-        Returns
-        -------
-        center_x, center_y, length, width, angle: float
-                the center position and size of the fragment
-        """
-
-        ell_shape=image_process(img, kernal_v=8) 
-
-
-        pass ell_shape
-
-    def get_reward(self, img_forward: np.array, img_forward_next: np.array)->float:
-        """
-        Calculate the reward after dissociation
-
-        Parameters
-        ----------
-        img_forward: array_like
-                the STM image before dissociation
-
-        img_forward_next: array_like
-                the STM image after dissociation
-
-        Returns
-        -------
-        reward: float
-                the reward for the RL agent
-        """
-
-
-        
-        pass
-
-    
-    def step_dissociate(self, x_start_nm, y_start_nm, z_nm, mvolt, pcurrent=0.0):
-
-
-        '''implement the dissociation action, and collect the data'''
-        x_start_nm = x_start_nm + self.atom_absolute_nm[0]
-        y_start_nm = y_start_nm + self.atom_absolute_nm[1]
-
-        x_kwargs = {'a_min':self.manip_limit_nm[0], 'a_max':self.manip_limit_nm[1]}
-        y_kwargs = {'a_min':self.manip_limit_nm[2], 'a_max':self.manip_limit_nm[3]}
-
-        x_start_nm = np.clip(x_start_nm, **x_kwargs)
-        y_start_nm = np.clip(y_start_nm, **y_kwargs) 
-
-        offset_nm=self.createc_controller.offset_nm
-        len_nm=self.createc_controller.im_size_nm 
-
-        tip_pos=x_start_nm, y_start_nm
-        params = bias_mv, current_pa, offset_nm, len_nm
-
-
-        self.createc_controller.stm.setparam('BiasVolt.[mV]',mvolt)
-        self.createc_controller.ramp_bias_mV(mvolt)
-        preamp_grain = 10**float(self.createc_controller.stm.getparam("Latmangain"))
-        self.createc_controller.stm.setparam("LatmanVolt",  mvolt) #(mV)
-        self.createc_controller.stm.setparam("Latmanlgi", pcurrent*1e-9*preamp_grain) #(pA)
-        
-        self.createc_controller.set_Z_approach(z_nm)
-        args = x_nm, y_nm, None, None, offset_nm, len_nm
-        x_pixel, y_pixel, _, _ = self.createc_controller.nm_to_pixel(*args)
-        self.createc_controller.stm.btn_tipform(x_pixel, y_pixel)
-        self.createc_controller.stm.waitms(50)
-
-
-        time = self.stm.vertdata(0, 0)  # time
-        V= self.stm.vertdata(1,1)  # voltage
-        Z = self.stm.vertdata(2,4) # Z
-        current_series = self.stm.vertdata(3,3) # current series
-        dI_dV = self.stm.vertdata(4,0) # dI/dV
-        topography = self.stm.vertdata(15,4)
-        data = dissociate_data(time,V,Z,current_series, dI_dV, topography)
-        # if data is not None:
-        #     time = np.array(data.time).flatten()
-        #     current = np.array(data.current).flatten()
-        #     Z= np.array(data.Z).flatten()
-        #     V= np.array(data.V).flatten()
-        # else:
-        #     time = None
-        #     current = None
-        #     Z = None
-        #     V = None
-        # return current, Z, V, time
-        return data
     
 
-    def detect_fragments(self, img):
+   
 
 
 

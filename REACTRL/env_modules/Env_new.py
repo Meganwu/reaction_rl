@@ -621,7 +621,7 @@ class RealExpEnv:
         self.switch_approach_area()
         self.ForbiddenArea(forbiden_radius=forbiden_radius)
 
-        plt.scatter(x,y,color='b',s=100)
+        plt.scatter(x,y,color='b',s=50)
         
         for i in range(-self.num_cell,self.num_cell+1):
             for j in range(-self.num_cell,self.num_cell+1):
