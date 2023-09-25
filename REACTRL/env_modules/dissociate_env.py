@@ -1,21 +1,27 @@
 from .Env_new import RealExpEnv
+from .createc_control import Createc_Controller
 from .get_atom_coordinate import get_all_atom_coordinate_nm, get_atom_coordinate_nm_with_anchor
 from .rrt import RRT
 from .data_visualization import plot_atoms_and_design
 from .assign_and_anchor import assignment, align_design, align_deisgn_stitching, get_atom_and_anchor
 
-for .image_module import image_process
+from .image_module_ellipse import image_process
 
 from scipy.spatial.distance import cdist as cdist
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from .get_atom_coordinate import get_atom_coordinate_nm
+import findiff
+from .atom_jump_detection import AtomJumpDetector_conv
+import os
+from matplotlib import pyplot as plt, patches
 
 
 from collections import namedtuple
 dissociate_data = namedtuple('dissociate_data',['time','x','y','current','dI_dV','topography'])
 
 
-class Dissociate_Env(RealExpEnv):
+class DissociateEnv:
         def __init__(self,
                 step_nm,
                 goal_nm,
@@ -41,54 +47,53 @@ class Dissociate_Env(RealExpEnv):
                 max_radius = 150, # nm
                 ):
                 
-                super(Dissociate_Env, self).__init__(step_nm, max_mvolt, max_pcurrent_to_mvolt_ratio, goal_nm, None, current_jump,
-                                                        im_size_nm, offset_nm, None, pixel, None, scan_mV, max_len, None, random_scan_rate = 0)
-        self.step_nm = step_nm
-        self.goal_nm = goal_nm
-        self.max_z_nm = max_z_nm
-        self.max_mvolt = max_mvolt
-        self.max_pcurrent_to_mvolt_ratio = max_pcurrent_to_mvolt_ratio
-        self.pixel = pixel
+                self.step_nm = step_nm
+                self.goal_nm = goal_nm
+                self.max_z_nm = max_z_nm
+                self.max_mvolt = max_mvolt
+                self.max_pcurrent_to_mvolt_ratio = max_pcurrent_to_mvolt_ratio
+                self.pixel = pixel
 
 
-        self.template = template
-        args = im_size_nm, offset_nm, pixel, scan_mV
-        self.createc_controller = Createc_Controller(*args)
-        self.current_jump = current_jump
-        self.manip_limit_nm = manip_limit_nm
-        if self.manip_limit_nm is not None:
-            self.inner_limit_nm = self.manip_limit_nm + np.array([1,-1,1,-1])
-        self.offset_nm = offset_nm
-        self.len_nm = im_size_nm
+                self.template = template
+                args = im_size_nm, offset_nm, pixel, scan_mV
+                self.createc_controller = Createc_Controller(*args)
+                self.current_jump = current_jump
+                self.manip_limit_nm = manip_limit_nm
+                if self.manip_limit_nm is not None:
+                        print('manipulation limit:', self.manip_limit_nm)
+                        self.inner_limit_nm = self.manip_limit_nm + np.array([1,-1,1,-1])
+                self.offset_nm = offset_nm
+                self.len_nm = im_size_nm
 
-        self.default_reward = -1
-        self.default_reward_done = 1
-        self.max_len = max_len
-        self.correct_drift = correct_drift
-        self.atom_absolute_nm = None
-        self.atom_relative_nm = None
-        self.template_max_y = template_max_y
+                self.default_reward = -1
+                self.default_reward_done = 1
+                self.max_len = max_len
+                self.correct_drift = correct_drift
+                self.atom_absolute_nm = None
+                self.atom_relative_nm = None
+                self.template_max_y = template_max_y
 
-        self.lattice_constant = 0.288
-        self.precision_lim = self.lattice_constant*np.sqrt(3)/3
-        self.bottom = bottom
-        kwargs = {'data_len': 2048, 'load_weight': load_weight}
-        self.atom_move_detector = AtomJumpDetector_conv(**kwargs)
-        self.random_scan_rate = random_scan_rate
-        self.accuracy, self.true_positive, self.true_negative = [], [], []
-        if pull_back_mV is None:
-            self.pull_back_mV = 10
-        else:
-            self.pull_back_mV = pull_back_mV
+                self.lattice_constant = 0.288
+                self.precision_lim = self.lattice_constant*np.sqrt(3)/3
+                self.bottom = bottom
+                kwargs = {'data_len': 2048, 'load_weight': load_weight}
+                self.atom_move_detector = AtomJumpDetector_conv(**kwargs)
+                self.random_scan_rate = random_scan_rate
+                self.accuracy, self.true_positive, self.true_negative = [], [], []
+                if pull_back_mV is None:
+                        self.pull_back_mV = 10
+                else:
+                        self.pull_back_mV = pull_back_mV
 
-        if pull_back_pA is None:
-            self.pull_back_pA = 57000
-        else:
-            self.pull_back_pA = pull_back_pA
+                if pull_back_pA is None:
+                        self.pull_back_pA = 57000
+                else:
+                        self.pull_back_pA = pull_back_pA
 
-        self.cellsize = cellsize
-        self.max_radius = max_radius
-        self.num_cell = int(self.max_radius/self.cellsize)
+                self.cellsize = cellsize
+                self.max_radius = max_radius
+                self.num_cell = int(self.max_radius/self.cellsize)
         
 
         def reset(self, updata_conv_net=True):
@@ -110,19 +115,19 @@ class Dissociate_Env(RealExpEnv):
         #TODO  build atom_diss_detector.currents_val
 
                 if (len(self.atom_move_detector.currents_val)>self.atom_move_detector.batch_size) and update_conv_net:
-                accuracy, true_positive, true_negative = self.atom_move_detector.eval()
-                self.accuracy.append(accuracy)
-                self.true_positive.append(true_positive)
-                self.true_negative.append(true_negative)
-                self.atom_move_detector.train()
+                        accuracy, true_positive, true_negative = self.atom_move_detector.eval()
+                        self.accuracy.append(accuracy)
+                        self.true_positive.append(true_positive)
+                        self.true_negative.append(true_negative)
+                        self.atom_move_detector.train()
 
                 if (self.atom_absolute_nm is None) or (self.atom_relative_nm is None):
-                self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
+                        self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
 
                 if self.out_of_range(self.atom_absolute_nm, self.inner_limit_nm):
-                print('Warning: atom is out of limit')
-                self.pull_atom_back()
-                self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
+                        print('Warning: atom is out of limit')
+                        self.pull_atom_back()
+                        self.atom_absolute_nm, self.atom_relative_nm = self.scan_atom()
 
 
                 #goal_nm is set between 0.28 - 2 nm (Cu)
@@ -219,10 +224,11 @@ class Dissociate_Env(RealExpEnv):
                         the center position and size of the fragment
                 """
 
-                ell_shape=image_process(img, kernal_v=8) 
+                ell_shape=image_process(img, kernal_v=8)
+                return ell_shape 
 
 
-                pass ell_shape
+    
 
         def compute_reward(self, img_forward: np.array, img_forward_next: np.array)->float:
                 """
@@ -415,7 +421,7 @@ class Dissociate_Env(RealExpEnv):
                 """
                 pass      
 
-        def atoms_detectio():
+        def atoms_detection():
                 """
                 Detect atoms after dissociation
 
