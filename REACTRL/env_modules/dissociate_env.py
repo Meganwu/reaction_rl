@@ -316,7 +316,7 @@ class Dissociate_Env(RealExpEnv):
 
                 return current
         
-        def detect_current_jump_m1(self, current):
+        def old_detect_current_jump(self, current):
                 """
                 Estimate if molecule has dissociated based on the gradient of the manipulation current trace
 
@@ -352,7 +352,7 @@ class Dissociate_Env(RealExpEnv):
                 """
                 if current is not None:
                         success, prediction = self.atom_diss_detector.predict(current)
-                        old_prediction = self.detect_current_jump_m1(current)
+                        old_prediction = self.old_detect_current_jump(current)
                         print('CNN prediction:',prediction,'M1 prediction:', old_prediction)
                         if success:
                                 print('cnn thinks there is molecule dissociation')
@@ -372,6 +372,71 @@ class Dissociate_Env(RealExpEnv):
                         print('CNN and old prediction both say no dissociation')                    
                         return False
 
+        def out_of_range(self, pos_nm, mani_limit_nm):
+                """
+                Check if the atom is out of the manipulation limit
+
+                Parameters
+                ----------
+                pos: array_like
+                        the position of the molcule in STM coordinates in nm
+
+                mani_limit: array_like
+                        [left, right, up, down] limit in STM coordinates in nm
+
+                Returns
+                -------
+                bool
+                        whether the atom is out of the manipulation limit
+                """
+                out = np.any((pos_nm-mani_limit_nm[[0,2]])*(pos_nm - mani_limit_nm[[1,3]])>0, axis=-1)
+                return out       
+
+        def pull_atom_back(self):
+                """
+                Pull atom to the center of self.manip_limit_nm with self.pull_back_mV, self.pull_back_pA
+                """
+                print('pulling atom back to center')
+                current = self.pull_back_pA
+                pos0 = self.atom_absolute_nm[0], self.atom_absolute_nm[1]
+                pos1x = np.mean(self.manip_limit_nm[:2])+2*np.random.random()-1
+                pos1y = np.mean(self.manip_limit_nm[2:])+2*np.random.random()-1
+                params = self.pull_back_mV, current, self.offset_nm, self.len_nm
+                self.createc_controller.lat_manipulation(*pos0, pos1x, pos1y, *params)     
+
+        def debris_detection():
+                """
+                Detect debris after dissociation
+
+                Returns
+                -------
+                bool
+                        whether there is debris
+                """
+                pass      
+
+        def atoms_detectio():
+                """
+                Detect atoms after dissociation
+
+                Returns
+                -------
+                bool
+                        whether there are atoms
+                """
+                pass
+
+        def crash_detection():
+                """
+                Detect crash after dissociation
+
+                Returns
+                -------
+                bool
+                        whether there is crash
+                """
+                pass                                                                   
+                
 
     
 
