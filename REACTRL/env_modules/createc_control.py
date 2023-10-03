@@ -515,6 +515,28 @@ class Createc_Controller:
         self.stm.btn_tipform(x_pixel, y_pixel)
         self.stm.waitms(50)
 
+
+    def vert_mani(self, A: float, x_nm: float, y_nm: float) -> None:
+        """Perform tip forming
+
+        Parameters
+        ----------
+
+        A : float
+            Z approach value in A
+
+        x_nm, y_nm : float
+            STM coordinates (nm)
+
+        """
+        offset_nm = self.get_offset_nm()
+        len_nm = self.get_len_nm()
+        self.set_Z_approach(A)
+        args = x_nm, y_nm, None, None, offset_nm, len_nm
+        x_pixel, y_pixel, _, _ = self.nm_to_pixel(*args)
+        self.stm.btn_tipform(x_pixel, y_pixel)
+        self.stm.waitms(50)
+
     def get_offset_nm(self) -> np.array:
         """Get XY offset value in nm
 
@@ -555,3 +577,4 @@ class Createc_Controller:
         Delta_X = float(self.stm.getparam('Delta X [Dac]'))
         len_nm = Delta_X*Nx*volt_unit*GainX*Xpiezoconst/(10*DAC_unit)
         return len_nm
+

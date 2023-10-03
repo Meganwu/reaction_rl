@@ -4,7 +4,7 @@ from .env_modules.createc_control import Createc_Controller
 from .env_modules.data_visualization import show_reset, show_done, show_step, plot_large_frame, plot_graph
 from .env_modules.episode_memory import Episode_Memory
 from .env_modules.dissociate_env import DissociateEnv
-from .env_modules.image_module_ellipse import image_process
+from .env_modules.image_module_ellipse import image_process, image_detect_edges
 from .rl_modules.sac_agent import sac_agent
 from .rl_modules.replay_memory import ReplayMemory, HerReplayMemory
 from .rl_modules.gaussianpolicy import GaussianPolicy

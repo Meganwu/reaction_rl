@@ -76,4 +76,32 @@ def image_process(img, kernal_v=6, show_fig=True) -> tuple:
         plt.subplot(1,2,2)
         plt.imshow(background)
     return ellipses
+
+
+def image_detect_edges(img, show_fig=False, extention=None) -> tuple:
+
+    # Display original image
+   
+    # Convert to graycsale
+    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Blur the image for better edge detection
+    img_blur= cv2.GaussianBlur(img_gray, (5,5), 0) 
+
+
+    # ret, thresh = cv2.threshold(img_blur0, 12.5, 255, cv2.THRESH_BINARY)
+    # img_blur = cv2.dilate(thresh, None, iterations = 1)
+    
+    # Sobel Edge Detection
+    sobelx = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=1, dy=0, ksize=5) # Sobel Edge Detection on the X axis
+    sobely = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=0, dy=1, ksize=5) # Sobel Edge Detection on the Y axis
+    sobelxy = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=1, dy=1, ksize=5) # Combined X and Y Sobel Edge Detection
+    # Display Sobel Edge Detection Images
+    
+    # Canny Edge Detection
+    edges = cv2.Canny(image=img_blur, threshold1=140, threshold2=160) # Canny Edge Detection
+
+
+    # Display Canny Edge Detection Image
+
+    return edges
     
