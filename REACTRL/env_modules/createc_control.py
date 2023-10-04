@@ -182,7 +182,7 @@ class Createc_Controller:
         else:
             return None
         
-    def dissassmanipulation(self, 
+    def diss_manipulation(self, 
                           x_start_nm: float, 
                           y_start_nm: float, 
                           z_nm: float, 
@@ -208,18 +208,17 @@ class Createc_Controller:
         rets = self.nm_to_pixel(*args)
         x_start_pixel, y_start_pixel, x_end_pixel, y_end_pixel = rets
 
-
-        self.stm.setparam('BiasVolt.[mV]',mvoltage)
-        self.ramp_bias_mV(mvoltage)
-        preamp_grain = 10**float(self.stm.getparam("Latmangain"))
-        self.stm.setparam("LatmanVolt",  mvoltage) #(mV)
-        self.stm.setparam("Latmanlgi", pcurrent*1e-9*preamp_grain) #(pA)
         
         self.set_Z_approach(z_nm)
         args = x_start_nm, y_start_nm, x_end_nm, y_end_nm, offset_nm, len_nm 
         x_start_pixel, y_start_pixel, _, _ = self.nm_to_pixel(*args)
-        self.stm.btn_tipform(x_start_pixel, y_start_pixel) #unit: image pixel
+
+        self.stm.setparam('Vpoint2.V', mvoltage) # mV
+        self.stm.setparam('VertFBLogiset', pcurrent)  #pA
+        self.stm.btn_vertspec(x_pixel, y_pixel)  #unit: image pixel
         self.stm.waitms(50)
+
+
 
 
         time = self.stm.vertdata(0, 0)  # time
